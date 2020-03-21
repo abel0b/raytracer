@@ -20,8 +20,8 @@ rt_acc: rt.cpp
 test: memcheck
 
 .PHONY: memcheck
-memcheck: rt
-	valgrind --error-exitcode=1 ./rt $(SCENE)
+memcheck: genbvh
+	valgrind --error-exitcode=1 ./genbvh teapot.obj
 
 .PHONY: clean
 clean:

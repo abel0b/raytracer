@@ -1,6 +1,8 @@
 #include <iostream>
 #include <algorithm>
 #include <limits>
+#include<iostream>
+#include<fstream>
 #include <functional>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
@@ -55,8 +57,46 @@ struct BVH {
     constexpr static float Ttri = 4.0; // time tocompute a ray-triangle intersection
     constexpr static float Taabb = 1.0; // time to test a ray and an AABB for intersection
     std::vector<LinearBVHNode> nodes;
+    std::vector<Triangle> triangles;
     BVH(std::vector<Triangle> triangles);
+    void write(std::string filename);
 };
+
+void BVH::write(std::string filename) {
+    std::ofstream wf(filename, std::ios::out | std::ios::binary);
+
+    unsigned int n_nodes = nodes.size();
+    wf.write((char*)&n_nodes, sizeof(unsigned int));
+    for(auto node: nodes) {
+        wf.write((char*)&node.bounds[0][0], sizeof(float));
+        wf.write((char*)&node.bounds[0][1], sizeof(float));
+        wf.write((char*)&node.bounds[0][2], sizeof(float));
+        wf.write((char*)&node.bounds[1][0], sizeof(float));
+        wf.write((char*)&node.bounds[1][1], sizeof(float));
+        wf.write((char*)&node.bounds[1][2], sizeof(float));
+        wf.write((char*)&node.offset, sizeof(float));
+        wf.write((char*)&node.n_primitives, sizeof(uint8_t));
+        wf.write((char*)&node.split_axis, sizeof(uint8_t));
+        uint16_t pad_dummy;
+        wf.write((char*)&pad_dummy, sizeof(uint16_t));
+    }
+
+    unsigned int n_tris = triangles.size();
+    wf.write((char*)&n_tris, sizeof(unsigned int));
+    for (unsigned int i = 0; i < n_tris; ++i) {
+        wf.write((char*)&triangles[i].p[0][0], sizeof(float));
+        wf.write((char*)&triangles[i].p[0][1], sizeof(float));
+        wf.write((char*)&triangles[i].p[0][2], sizeof(float));
+        wf.write((char*)&triangles[i].p[1][0], sizeof(float));
+        wf.write((char*)&triangles[i].p[1][1], sizeof(float));
+        wf.write((char*)&triangles[i].p[1][2], sizeof(float));
+        wf.write((char*)&triangles[i].p[2][0], sizeof(float));
+        wf.write((char*)&triangles[i].p[2][1], sizeof(float));
+        wf.write((char*)&triangles[i].p[2][2], sizeof(float));
+    }
+
+    wf.close();
+}
 
 // Axis-aligned minimum bounding box
 struct AABB {
@@ -77,15 +117,6 @@ AABB::AABB(float3& bb_min, float3& bb_max) : bb_min(bb_min), bb_max(bb_max) {
 
 }
 
-// inline AABB(const AABB& bb1, const AABB& bb2) {
-// 	bb_min.x = min(bb1.bb_min.x, bb2.bb_min.x);
-// 	bb_min.y = min(bb1.bb_min.y, bb2.bb_min.y);
-// 	bb_min.z = min(bb1.bb_min.z, bb2.bb_min.z);
-// 	bb_max.x = max(bb1.bb_max.x, bb2.bb_max.x);
-// 	bb_max.y = max(bb1.bb_max.y, bb2.bb_max.y);
-// 	bb_max.z = max(bb1.bb_max.z, bb2.bb_max.z);
-// }
-
 void AABB::insert(Triangle& tri) {
     for (int vertex=0; vertex<3; vertex++) {
         bb_min.x = std::min(bb_min.x, tri.p[vertex][0]);
@@ -100,11 +131,6 @@ void AABB::insert(Triangle& tri) {
 float AABB::area() {
     return 2*((bb_max.x-bb_min.x + bb_max.z-bb_min.z)*(bb_max.y-bb_min.y) + (bb_max.x-bb_min.x)*(bb_max.z-bb_min.z));
 }
-
-// inline Vector3 getCentroid() {
-// 	return 0.5f * (bb_min+bb_max);
-// }
-
 
 // TODO: quick sort
 template<typename T, typename Comparator>
@@ -126,7 +152,7 @@ float SAH(int ns1, int ns2, float left_area, float right_area, float total_area)
 }
 
 // Implements algorithm described in https://graphics.stanford.edu/~boulos/papers/togbvh.pdf
-void partition_sweep(std::vector<LinearBVHNode>* nodes, Triangle * triangles, int start, int end) {
+void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, int start, int end) {
     float best_cost = BVH::Ttri*(end-start);
     float best_axis = -1;
     float best_event = -1;
@@ -172,9 +198,21 @@ void partition_sweep(std::vector<LinearBVHNode>* nodes, Triangle * triangles, in
         }
     }
 
+    LinearBVHNode node;
+    node.bounds[0][0] = overall_box.bb_min.x;
+    node.bounds[0][1] = overall_box.bb_min.y;
+    node.bounds[0][2] = overall_box.bb_min.z;
+    node.bounds[1][0] = overall_box.bb_max.x;
+    node.bounds[1][1] = overall_box.bb_max.y;
+    node.bounds[1][2] = overall_box.bb_max.z;
+    node.split_axis = best_axis;
+    int node_num = nodes.size();
+
     if (best_axis == -1) {
         // Make a leaf node
-        // TODO
+        node.n_primitives = end-start;
+        node.offset = start; // primitive offset
+        nodes.push_back(node);
     }
     else {
         // Make an inner node
@@ -187,26 +225,19 @@ void partition_sweep(std::vector<LinearBVHNode>* nodes, Triangle * triangles, in
                 return (tri1->p[0][axis]+tri1->p[1][axis]+tri1->p[2][axis]) > (tri2->p[0][axis]+tri2->p[1][axis]+tri2->p[2][axis]);
             }
         );
-
-        LinearBVHNode node;
-        node.bounds[0][0] = overall_box.bb_min.x;
-        node.bounds[0][1] = overall_box.bb_min.y;
-        node.bounds[0][2] = overall_box.bb_min.z;
-        node.bounds[1][0] = overall_box.bb_max.x;
-        node.bounds[1][1] = overall_box.bb_max.y;
-        node.bounds[1][2] = overall_box.bb_max.z;
-        node.offset = start;
-        node.n_primitives = end-start;
-        node.split_axis = best_axis;
-        nodes->push_back(node);
+    
+        node.n_primitives = 0;
+        nodes.push_back(node);
 
         partition_sweep(nodes, triangles, start, best_event);
+        nodes[node_num].offset = nodes.size();
         partition_sweep(nodes, triangles, best_event, end);
     }
+    
 }
 
-BVH::BVH(std::vector<Triangle> triangles) {
-    partition_sweep(&nodes, triangles.data(), 0, (int)triangles.size());
+BVH::BVH(std::vector<Triangle> triangles): triangles(triangles) {
+    partition_sweep(nodes, triangles.data(), 0, (int)triangles.size());
     std::cout << "bvh nodes=" << nodes.size() << std::endl;
 }
 
@@ -290,6 +321,7 @@ int main(int argc, char * argv[]) {
 
     std::cout << "Loaded obj" << std::endl;
     BVH bvh(triangles);
+    bvh.write("out.bvh");
 
     return EXIT_SUCCESS;
 }
