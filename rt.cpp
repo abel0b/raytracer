@@ -119,7 +119,6 @@ namespace ispc {
 
 }
 
-
 using namespace ispc;
 
 typedef unsigned int uint;
@@ -128,8 +127,6 @@ typedef unsigned int uint;
 inline float Dot(const float3 &a, const float3 &b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
-
-
 
 static inline void vnormalize(float3 &v) {
     float len2 = Dot(v, v);
@@ -491,8 +488,8 @@ void raytrace_serial(int width, int height, int baseWidth, int baseHeight,
                 float occ = 1.0f;
 
                 if (hit) {
-     		  occ = ambient_occlusion(nodes, triangles, ray);
-		  light = light_and_shadows(nodes, triangles, ray);
+     		        occ = ambient_occlusion(nodes, triangles, ray);
+		            light = light_and_shadows(nodes, triangles, ray);
                 }
 
                 int offset = y * width + x;
@@ -510,8 +507,6 @@ extern void raytrace_serial(int width, int height, int baseWidth, int baseHeight
 
 Triangle *triangles;// = new Triangle[nTris];
 uint nTris;
-
-
 
 static void writeImage(int *idImage, float *depthImage, int width, int height,
                        const char *filename) {
@@ -533,9 +528,9 @@ static void writeImage(int *idImage, float *depthImage, int width, int height,
 	    g = 0;
 	    b = 0;
 	    if(id){
-	      r = 255.0*(t);
-	      g = 255.0*(t);
-	      b = 255.0*(t);
+	        r = 255.0*(t);
+	        g = 255.0*(t);
+	        b = 255.0*(t);
 	    }
             fputc(r, f);
             fputc(g, f);
@@ -546,12 +541,10 @@ static void writeImage(int *idImage, float *depthImage, int width, int height,
     printf("Wrote image file %s\n", filename);
 }
 
-
 static void usage() {
     fprintf(stderr, "rt <scene name base> [--scale=<factor>] [ispc iterations] [tasks iterations] [serial iterations]\n");
     exit(1);
 }
-
 
 int main(int argc, char *argv[]) {
     float scale = 1.f;
@@ -610,6 +603,8 @@ int main(int argc, char *argv[]) {
     uint nNodes;
     READ(nNodes, 1);
 
+    printf("nNodes = %d\n");
+
     LinearBVHNode *nodes = new LinearBVHNode[nNodes];
     for (unsigned int i = 0; i < nNodes; ++i) {
         // Each node is 6x floats for a boox, then an integer for an offset
@@ -636,7 +631,7 @@ int main(int argc, char *argv[]) {
     }
 
     // And then read the triangles 
-//    uint nTris;
+    // uint nTris;
     READ(nTris, 1);
     /*Triangle * */triangles = new Triangle[nTris];
     for (uint i = 0; i < nTris; ++i) {
@@ -656,32 +651,30 @@ int main(int argc, char *argv[]) {
 
 
     uint i;
-    for (i = 0; i < nTris; i++)
-    {
-	max_x = MAX(max_x, triangles[i].p[0][0]);
-	max_x = MAX(max_x, triangles[i].p[0][1]);
-	max_x = MAX(max_x, triangles[i].p[0][2]);
+    for (i = 0; i < nTris; i++) {
+        max_x = MAX(max_x, triangles[i].p[0][0]);
+        max_x = MAX(max_x, triangles[i].p[0][1]);
+        max_x = MAX(max_x, triangles[i].p[0][2]);
 
-	max_y = MAX(max_y, triangles[i].p[1][0]);
-	max_y = MAX(max_y, triangles[i].p[1][1]);
-	max_y = MAX(max_y, triangles[i].p[1][2]);
+        max_y = MAX(max_y, triangles[i].p[1][0]);
+        max_y = MAX(max_y, triangles[i].p[1][1]);
+        max_y = MAX(max_y, triangles[i].p[1][2]);
 
-	max_z = MAX(max_z, triangles[i].p[2][0]);
-	max_z = MAX(max_z, triangles[i].p[2][1]);
-	max_z = MAX(max_z, triangles[i].p[2][2]);
+        max_z = MAX(max_z, triangles[i].p[2][0]);
+        max_z = MAX(max_z, triangles[i].p[2][1]);
+        max_z = MAX(max_z, triangles[i].p[2][2]);
 
-	min_x = MIN(min_x, triangles[i].p[0][0]);
-	min_x = MIN(min_x, triangles[i].p[0][1]);
-	min_x = MIN(min_x, triangles[i].p[0][2]);
+        min_x = MIN(min_x, triangles[i].p[0][0]);
+        min_x = MIN(min_x, triangles[i].p[0][1]);
+        min_x = MIN(min_x, triangles[i].p[0][2]);
 
-	min_y = MIN(min_y, triangles[i].p[1][0]);
-	min_y = MIN(min_y, triangles[i].p[1][1]);
-	min_y = MIN(min_y, triangles[i].p[1][2]);
+        min_y = MIN(min_y, triangles[i].p[1][0]);
+        min_y = MIN(min_y, triangles[i].p[1][1]);
+        min_y = MIN(min_y, triangles[i].p[1][2]);
 
-	min_z = MIN(min_z, triangles[i].p[2][0]);
-	min_z = MIN(min_z, triangles[i].p[2][1]);
-	min_z = MIN(min_z, triangles[i].p[2][2]);
-
+        min_z = MIN(min_z, triangles[i].p[2][0]);
+        min_z = MIN(min_z, triangles[i].p[2][1]);
+        min_z = MIN(min_z, triangles[i].p[2][2]);
     }
 
     float3 diag(max_x-min_x, max_y - min_y, max_z - min_z);
@@ -709,17 +702,16 @@ int main(int argc, char *argv[]) {
     memset(id, 0, width*height*sizeof(int));
     memset(image, 0, width*height*sizeof(float));
 
-    //    reset_and_start_timer();
+    // reset_and_start_timer();
     do{
-      if(poslight){
-	fprintf(stderr, "normalized light pos x y z and intensity?\n");
-	scanf("%f %f %f %f", &light[0], &light[1], &light[2], &light[3]);
-      }
-      raytrace_serial(width, height, baseWidth, baseHeight, raster2camera, 
+        if(poslight){
+	        fprintf(stderr, "normalized light pos x y z and intensity?\n");
+	        scanf("%f %f %f %f", &light[0], &light[1], &light[2], &light[3]);
+        }
+        raytrace_serial(width, height, baseWidth, baseHeight, raster2camera, 
                         camera2world, image, id, nodes, nNodes, triangles, nTris);
-      writeImage(id, image, width, height, "rt-serial.ppm");
-    }while(poslight);
-
+        writeImage(id, image, width, height, "rt-serial.ppm");
+    } while(poslight);
 
     return 0;
 }
@@ -749,11 +741,9 @@ void reshape ( int width, int height ) {
 
 }
 
-void processNormalKeys(unsigned char key, int x, int y)
-{
-
-if (key == 27)
-exit(0);
+void processNormalKeys(unsigned char key, int x, int y) {
+    if (key == 27)
+        exit(0);
 }
 
 void display() {  // Display function will draw the image.
