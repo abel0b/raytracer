@@ -2,10 +2,14 @@
 #include <algorithm>
 #include <limits>
 #include<iostream>
-#include<fstream>
+#include <fstream>
+#include <execution>
+#include <cmath>
 #include <functional>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
+#include <omp.h>
+#include <unistd.h>
 
 struct float3 {
     float3() { }
@@ -54,7 +58,7 @@ LinearBVHNode::LinearBVHNode() {
 }
 
 struct BVH {
-    constexpr static float Ttri = 4.0; // time tocompute a ray-triangle intersection
+    constexpr static float Ttri = 1.0; // time tocompute a ray-triangle intersection
     constexpr static float Taabb = 1.0; // time to test a ray and an AABB for intersection
     std::vector<LinearBVHNode> nodes;
     std::vector<Triangle> triangles;
@@ -74,7 +78,7 @@ void BVH::write(std::string filename) {
         wf.write((char*)&node.bounds[1][0], sizeof(float));
         wf.write((char*)&node.bounds[1][1], sizeof(float));
         wf.write((char*)&node.bounds[1][2], sizeof(float));
-        wf.write((char*)&node.offset, sizeof(float));
+        wf.write((char*)&node.offset, sizeof(int32_t));
         wf.write((char*)&node.n_primitives, sizeof(uint8_t));
         wf.write((char*)&node.split_axis, sizeof(uint8_t));
         uint16_t pad_dummy;
@@ -102,14 +106,14 @@ void BVH::write(std::string filename) {
 struct AABB {
     float3 bb_min;
     float3 bb_max;
+    bool empty;
 	AABB();
 	AABB(float3& bb_min, float3& bb_max);
     void insert(Triangle& tri);
     float area();
 };
 	
-AABB::AABB() : bb_min(float3(std::numeric_limits<float>::max())), bb_max(float3(std::numeric_limits<float>::min())) {
-
+AABB::AABB() : bb_min(float3(std::numeric_limits<float>::max())), bb_max(float3(std::numeric_limits<float>::min())), empty(true) {
 
 }
 
@@ -118,6 +122,7 @@ AABB::AABB(float3& bb_min, float3& bb_max) : bb_min(bb_min), bb_max(bb_max) {
 }
 
 void AABB::insert(Triangle& tri) {
+    empty = false;
     for (int vertex=0; vertex<3; vertex++) {
         bb_min.x = std::min(bb_min.x, tri.p[vertex][0]);
         bb_min.y = std::min(bb_min.y, tri.p[vertex][1]);
@@ -129,74 +134,88 @@ void AABB::insert(Triangle& tri) {
 }
 
 float AABB::area() {
-    return 2*((bb_max.x-bb_min.x + bb_max.z-bb_min.z)*(bb_max.y-bb_min.y) + (bb_max.x-bb_min.x)*(bb_max.z-bb_min.z));
+    return (empty)? std::numeric_limits<float>::max() : 2*((bb_max.x-bb_min.x + bb_max.z-bb_min.z)*(bb_max.y-bb_min.y) + (bb_max.x-bb_min.x)*(bb_max.z-bb_min.z));
 }
 
-// TODO: quick sort
 template<typename T, typename Comparator>
 void sort(T * arr, int start, int end, Comparator cmp) {
-	for (int i = start; i < end; i++) {
-		for (int j = start; j < end; j++) {
-			if (cmp(&arr[j], &arr[i])) {
-				T tmp = arr[i];
-				arr[i] = arr[j];
-				arr[j] = tmp;
-			}
-		}
-	}
+    // https://en.cppreference.com/w/cpp/algorithm/execution_policy_tag_t
+    std::sort(std::execution::par_unseq, arr+start, arr+end, cmp);
 }
 
 // Surface Area Heuristic
 float SAH(int ns1, int ns2, float left_area, float right_area, float total_area) {
-    return 2*BVH::Taabb + left_area/total_area*ns1*BVH::Ttri + right_area/total_area*ns2*BVH::Ttri;
+    if (left_area == std::numeric_limits<float>::max() || right_area == std::numeric_limits<float>::max()) {
+        return std::numeric_limits<float>::max();
+    }
+    else {
+        return 2*BVH::Taabb + left_area/total_area*ns1*BVH::Ttri + right_area/total_area*ns2*BVH::Ttri;
+    }
 }
 
 // Implements algorithm described in https://graphics.stanford.edu/~boulos/papers/togbvh.pdf
 void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, int start, int end) {
+// #define DEPTH_LIMIT 18
+#ifdef DEPTH_LIMIT
+    if (log2((float)nodes.size()) > DEPTH_LIMIT) {
+        exit(0);
+    }
+#endif
+
+    float leaf = true;
     float best_cost = BVH::Ttri*(end-start);
-    float best_axis = -1;
+    uint8_t best_axis = -1;
     float best_event = -1;
 
-    std::cout << "start=" << start << " end=" << end << std::endl; 
-
-    AABB overall_box;
+#ifdef DEBUG
+    std::cout << "start=" << start << " end=" << end << std::endl;
+#endif
+    
+    AABB over
+    
+#ifdef DEBUG
+    std::cout << "init_cost" << best_cost << std::endl;
+#endif
 
     for (int axis = 0; axis<3; axis++) {
         sort(
             triangles,
             start,
             end,
-            [axis](const Triangle * tri1, const Triangle * tri2) -> bool {
-                return (tri1->p[0][axis]+tri1->p[1][axis]+tri1->p[2][axis]) > (tri2->p[0][axis]+tri2->p[1][axis]+tri2->p[2][axis]); 
+            [axis](const Triangle & tri1, const Triangle & tri2) -> bool {
+                return (tri1.p[0][axis]+tri1.p[1][axis]+tri1.p[2][axis]) > (tri2.p[0][axis]+tri2.p[1][axis]+tri2.p[2][axis]); 
             }
         );
 
-        AABB left_area[end-start];
-        AABB right_area[end-start];
+        float left_area[end-start];
+        float right_area[end-start];
 
-        {
-            AABB box;
-            for(int i = 0; i<end-start; ++i) {
-                left_area[i] = box;
-                box.insert(triangles[start+i]);
-                overall_box.insert(triangles[start+i]);
-            }
+        AABB tmp_box;
+
+        for(int i = 0; i<end-start; ++i) {
+            left_area[i] = tmp_box.area();
+            tmp_box.insert(triangles[start+i]);
+            overall_box.insert(triangles[start+i]);
         }
+        
+        tmp_box = AABB();
 
-        {
-            AABB box;
-            for(int i = end-start-1; i>=0; --i) {
-                right_area[i] = box;
-                box.insert(triangles[i]);
-                float this_cost = SAH(i, end-start-i, left_area[i].area(), right_area[i].area(), overall_box.area());
-                if (this_cost < best_cost) {
-                    best_cost = this_cost;
-                    best_event = start+i;
-                    best_axis = axis;
-                }
+        for(int i = end-start-1; i>=0; --i) {
+            right_area[i] = tmp_box.area();
+            tmp_box.insert(triangles[start+i]);
+            float this_cost = SAH(i, end-start-i, left_area[i], right_area[i], overall_box.area());
+            if (this_cost < best_cost) {
+                leaf = false;
+                best_cost = this_cost;
+                best_event = start+i;
+                best_axis = axis;
             }
         }
     }
+
+#ifdef DEBUG
+    std::cout << "best_cost" << best_cost << std::endl;
+#endif
 
     LinearBVHNode node;
     node.bounds[0][0] = overall_box.bb_min.x;
@@ -206,11 +225,11 @@ void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, in
     node.bounds[1][1] = overall_box.bb_max.y;
     node.bounds[1][2] = overall_box.bb_max.z;
     node.split_axis = best_axis;
-    int node_num = nodes.size();
 
-    if (best_axis == -1) {
+    if (leaf == true) {
         // Make a leaf node
-        node.n_primitives = end-start;
+        assert(end-start < 256);
+        node.n_primitives = (uint8_t)end-start;
         node.offset = start; // primitive offset
         nodes.push_back(node);
     }
@@ -221,8 +240,8 @@ void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, in
             triangles,
             start,
             end,
-            [axis](const Triangle * tri1, const Triangle * tri2) -> bool {
-                return (tri1->p[0][axis]+tri1->p[1][axis]+tri1->p[2][axis]) > (tri2->p[0][axis]+tri2->p[1][axis]+tri2->p[2][axis]);
+            [axis](const Triangle & tri1, const Triangle & tri2) -> bool {
+                return (tri1.p[0][axis]+tri1.p[1][axis]+tri1.p[2][axis]) > (tri2.p[0][axis]+tri2.p[1][axis]+tri2.p[2][axis]); 
             }
         );
     
@@ -230,7 +249,7 @@ void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, in
         nodes.push_back(node);
 
         partition_sweep(nodes, triangles, start, best_event);
-        nodes[node_num].offset = nodes.size();
+        node.offset = nodes.size();
         partition_sweep(nodes, triangles, best_event, end);
     }
     
@@ -238,7 +257,8 @@ void partition_sweep(std::vector<LinearBVHNode>& nodes, Triangle * triangles, in
 
 BVH::BVH(std::vector<Triangle> triangles): triangles(triangles) {
     partition_sweep(nodes, triangles.data(), 0, (int)triangles.size());
-    std::cout << "bvh nodes=" << nodes.size() << std::endl;
+    std::cout << "bvh_nodes=" << nodes.size() << std::endl;
+    std::cout << "bvh_depth=" << log2((float)nodes.size()) << std::endl;
 }
 
 int main(int argc, char * argv[]) {
@@ -248,7 +268,7 @@ int main(int argc, char * argv[]) {
         exit(1);
     }
 
-    std::cout << "Loading obj" << std::endl;
+    std::cout << "Load obj" << std::endl;
 
     std::string inputfile(argv[1]);
 
@@ -267,6 +287,7 @@ int main(int argc, char * argv[]) {
 
     if (!err.empty()) {
         std::cerr << err << std::endl;
+        exit(1);
     }
 
     if (!ret) {
@@ -319,8 +340,10 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    std::cout << "Loaded obj" << std::endl;
+    std::cout << "Build bvh" << std::endl;
     BVH bvh(triangles);
+    
+    std::cout << "Write bvh" << std::endl;
     bvh.write("out.bvh");
 
     return EXIT_SUCCESS;

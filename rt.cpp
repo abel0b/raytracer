@@ -603,7 +603,7 @@ int main(int argc, char *argv[]) {
     uint nNodes;
     READ(nNodes, 1);
 
-    printf("nNodes = %d\n");
+    printf("nNodes = %d\n", nNodes);
 
     LinearBVHNode *nodes = new LinearBVHNode[nNodes];
     for (unsigned int i = 0; i < nNodes; ++i) {
@@ -647,6 +647,10 @@ int main(int argc, char *argv[]) {
         // And create an object id
         triangles[i].id = i+1;
     }
+
+    char tmp;
+    assert(fread(&tmp, sizeof(char), 1, f) != 1);
+
     fclose(f);
 
 
